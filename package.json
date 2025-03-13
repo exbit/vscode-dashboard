@@ -1,9 +1,9 @@
 {
-    "name": "vscode-dashboard",
-    "displayName": "Project Dashboard",
+    "name": "l2h-vscode-dashboard",
+    "displayName": "Project Dashboard Neo",
     "description": "Organize your workspaces in a speed-dial manner.",
     "version": "2.6.0",
-    "publisher": "kruemelkatze",
+    "publisher": "lang2hong",
     "icon": "media/extension_icon.png",
     "engines": {
         "vscode": "^1.51.0"
@@ -21,7 +21,7 @@
     "main": "./dist/dashboard",
     "repository": {
         "type": "git",
-        "url": "https://github.com/Kruemelkatze/vscode-dashboard.git"
+        "url": "https://github.com/lang2hong/vscode-dashboard.git"
     },
     "capabilities": {
         "untrustedWorkspaces": {
