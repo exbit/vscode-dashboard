@@ -2,11 +2,11 @@
     "name": "l2h-vscode-dashboard",
     "displayName": "Project Dashboard Neo",
     "description": "Organize your workspaces in a speed-dial manner.",
-    "version": "2.6.0",
+    "version": "2.6.1",
     "publisher": "lang2hong",
     "icon": "media/extension_icon.png",
     "engines": {
-        "vscode": "^1.51.0"
+        "vscode": "^1.99.0"
     },
     "extensionKind": [
         "ui",
@@ -16,7 +16,7 @@
         "Other"
     ],
     "activationEvents": [
-        "*"
+        "onStartupFinished"
     ],
     "main": "./dist/dashboard",
     "repository": {
@@ -171,30 +171,32 @@
         }
     },
     "scripts": {
-        "vscode:prepublish": "webpack --mode production && npx gulp --production",
+        "build": "webpack --mode production && bun gulp --production && vsce package",
+        "vscode:prepublish": "webpack --mode production && bun gulp --production",
         "webpack": "webpack --mode development",
         "webpack-dev": "webpack --mode development --watch",
         "test-compile": "tsc -p ./",
         "lint": "tslint -p ./"
     },
     "devDependencies": {
-        "@types/mocha": "^8.0.4",
-        "@types/node": "^14.14.8",
-        "@types/vscode": "^1.51.0",
-        "gulp": "^4.0.2",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^24.0.14",
+        "@types/vscode": "^1.99.0",
+        "gulp": "^5.0.1",
         "gulp-clean-css": "^4.3.0",
         "gulp-mode": "^1.1.0",
-        "gulp-sass": "^5.0.0",
-        "sass": "^1.56.0",
-        "ts-loader": "^6.2.2",
+        "gulp-sass": "^6.0.1",
+        "sass": "^1.89.2",
+        "ts-loader": "^9.5.2",
         "tslint": "^6.1.3",
-        "typescript": "^4.0.5",
-        "webpack": "^5.74.0",
-        "webpack-cli": "^4.10.0"
+        "typescript": "^5.8.3",
+        "webpack": "^5.100.2",
+        "webpack-cli": "^6.0.1",
+        "vsce": "^2.15.0"
     },
     "dependencies": {
         "dom-autoscroller": "^2.3.4",
         "dragula": "^3.7.3",
-        "fitty": "^2.3.5"
+        "fitty": "^2.4.2"
     }
 }
