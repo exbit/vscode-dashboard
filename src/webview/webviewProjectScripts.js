@@ -72,6 +72,15 @@ function initProjects() {
             return;
         }
 
+        if (action === "add-subgroup") {
+            window.vscode.postMessage({
+                type: 'add-subgroup',
+                groupId: groupId,
+            });
+
+            return;
+        }
+
         if (action === "collapse") {
             groupDiv.classList.toggle("collapsed");
         }

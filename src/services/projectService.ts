@@ -27,15 +27,32 @@ export default class ProjectService extends BaseService {
         return groups;
     }
 
+    getAllGroupsFlat(): Group[] {
+        const groups = this.getGroups();
+        const flatGroups: Group[] = [];
+
+        const addGroupsRecursively = (groupList: Group[]) => {
+            for (const group of groupList) {
+                flatGroups.push(group);
+                if (group.children && group.children.length > 0) {
+                    addGroupsRecursively(group.children);
+                }
+            }
+        };
+
+        addGroupsRecursively(groups);
+        return flatGroups;
+    }
+
     getGroup(groupId: string): Group {
-        var groups = this.getGroups();
-        return groups.find(g => g.id === groupId) || null;
+        const flatGroups = this.getAllGroupsFlat();
+        return flatGroups.find(g => g.id === groupId) || null;
     }
 
     getProjectsFlat(): Project[] {
-        var groups = this.getGroups();
+        const flatGroups = this.getAllGroupsFlat();
         var projects = [];
-        for (let group of groups) {
+        for (let group of flatGroups) {
             projects.push.apply(projects, group.projects);
         }
 
@@ -52,8 +69,8 @@ export default class ProjectService extends BaseService {
             return null;
         }
 
-        var groups = this.getGroups();
-        for (let group of groups) {
+        const flatGroups = this.getAllGroupsFlat();
+        for (let group of flatGroups) {
             let project = group.projects.find(p => p.id === projectId);
             if (project != null) {
                 return [project, group];
@@ -63,16 +80,45 @@ export default class ProjectService extends BaseService {
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~ ADD ~~~~~~~~~~~~~~~~~~~~~~~~~
-    async addGroup(groupName: string, projects: Project[] = null): Promise<Group> {
+    async addGroup(groupName: string, projects: Project[] = null, parentId?: string): Promise<Group> {
         var groups = this.getGroups();
         if (groups == null) {
             groups = [];
         }
 
-        let newGroup = new Group(groupName, projects);
-        groups.push(newGroup);
+        let newGroup = new Group(groupName, projects, parentId);
+
+        if (parentId) {
+            // Add to child group
+            const parentGroup = this.findGroupInHierarchy(groups, parentId);
+            if (parentGroup) {
+                parentGroup.children.push(newGroup);
+            } else {
+                // If parent group not found, add to root
+                groups.push(newGroup);
+            }
+        } else {
+            // Add to root
+            groups.push(newGroup);
+        }
+
         await this.saveGroups(groups);
         return newGroup;
+    }
+
+    private findGroupInHierarchy(groups: Group[], groupId: string): Group | null {
+        for (const group of groups) {
+            if (group.id === groupId) {
+                return group;
+            }
+            if (group.children && group.children.length > 0) {
+                const found = this.findGroupInHierarchy(group.children, groupId);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     async addProject(project: Project, groupId: string): Promise<Group[]> {
@@ -83,12 +129,13 @@ export default class ProjectService extends BaseService {
         }
 
         // Get the group if there is any
-        var group = groups.find(g => g.id === groupId);
+        var group = this.findGroupInHierarchy(groups, groupId);
 
         if (group == null) {
-            if (groups.length) {
+            const flatGroups = this.getAllGroupsFlat();
+            if (flatGroups.length) {
                 // No group found, but there are groups? Default to first group
-                group = groups[0];
+                group = flatGroups[0];
             } else {
                 // No groups, create initial group
                 group = new Group(null);
@@ -120,7 +167,8 @@ export default class ProjectService extends BaseService {
         }
 
         var groups = this.getGroups();
-        for (let group of groups) {
+        const flatGroups = this.getAllGroupsFlat();
+        for (let group of flatGroups) {
             let project = group.projects.find(p => p.id === projectId);
             if (project != null) {
                 Object.assign(project, updatedProject, { id: projectId });
@@ -144,7 +192,7 @@ export default class ProjectService extends BaseService {
         }
 
         var groups = this.getGroups();
-        var group = groups.find(g => g.id === groupId);
+        var group = this.findGroupInHierarchy(groups, groupId);
         if (group != null) {
             Object.assign(group, updatedGroup, { id: groupId });
         }
@@ -171,7 +219,19 @@ export default class ProjectService extends BaseService {
     async removeGroup(groupId: string, testIfEmpty: boolean = false): Promise<Group[]> {
         let groups = this.getGroups();
 
-        groups = groups.filter(g => g.id !== groupId || (testIfEmpty && g.projects.length));
+        const removeFromHierarchy = (groupList: Group[]): Group[] => {
+            return groupList.filter(g => {
+                if (g.id === groupId && (!testIfEmpty || g.projects.length === 0)) {
+                    return false;
+                }
+                if (g.children && g.children.length > 0) {
+                    g.children = removeFromHierarchy(g.children);
+                }
+                return true;
+            });
+        };
+
+        groups = removeFromHierarchy(groups);
         await this.saveGroups(groups);
 
         return groups;
@@ -308,13 +368,31 @@ export default class ProjectService extends BaseService {
     private sanitizeGroups(groups: Group[]): Group[] {
         groups = Array.isArray(groups) ? groups.filter(g => !!g) : [];
 
-        // Fill id, should only happen if user removes id manually. But better be safe than sorry.
-        for (let g of groups) {
-            if (!g.id) {
-                g.id = Group.getRandomId();
-            }
-        }
+        const sanitizeRecursively = (groupList: Group[]) => {
+            for (let g of groupList) {
+                // Fill id, should only happen if user removes id manually. But better be safe than sorry.
+                if (!g.id) {
+                    g.id = Group.getRandomId();
+                }
 
+                // Ensure projects array exists
+                if (!g.projects) {
+                    g.projects = [];
+                }
+
+                // Ensure children array exists
+                if (!g.children) {
+                    g.children = [];
+                }
+
+                // Recursively sanitize children
+                if (g.children.length > 0) {
+                    g.children = this.sanitizeGroups(g.children);
+                }
+            }
+        };
+
+        sanitizeRecursively(groups);
         return groups;
     }
 }

@@ -8,11 +8,15 @@ export class Group {
     groupName: string;
     collapsed: boolean;
     projects: Project[];
+    children: Group[];
+    parentId?: string;
 
-    constructor(groupName: string, projects: Project[] = null) {
+    constructor(groupName: string, projects: Project[] = null, parentId?: string) {
         this.id = generateRandomId(groupName);
         this.groupName = groupName;
         this.projects = projects || [];
+        this.children = [];
+        this.parentId = parentId;
     }
 
     static getRandomId(prepend: string = null) {
@@ -73,6 +77,13 @@ function generateRandomId(prepend: string = null) {
 export interface GroupOrder {
     groupId: string;
     projectIds: string[];
+}
+
+export interface GroupHierarchy {
+    groupId: string;
+    projectIds: string[];
+    children: GroupHierarchy[];
+    level: number;
 }
 
 export interface DashboardInfos {

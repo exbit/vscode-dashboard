@@ -2,7 +2,7 @@
     "name": "l2h-vscode-dashboard",
     "displayName": "Project Dashboard Neo",
     "description": "Organize your workspaces in a speed-dial manner.",
-    "version": "2.6.1",
+    "version": "2.6.2",
     "publisher": "lang2hong",
     "icon": "media/extension_icon.png",
     "engines": {

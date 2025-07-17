@@ -1,7 +1,7 @@
 'use strict';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { Project, GroupOrder, Group, ProjectRemoteType, getRemoteType, DashboardInfos, ProjectOpenType, ReopenDashboardReason, ProjectPathType, sanitizeProjectName } from './models';
+import { Project, GroupOrder, Group, GroupHierarchy, ProjectRemoteType, getRemoteType, DashboardInfos, ProjectOpenType, ReopenDashboardReason, ProjectPathType, sanitizeProjectName } from './models';
 import { getSidebarContent, getDashboardContent } from './webview/webviewContent';
 import { USE_PROJECT_COLOR, PREDEFINED_COLORS, StartupOptions, USER_CANCELED, FixedColorOptions, RelevantExtensions, SSH_REGEX, REMOTE_REGEX, SSH_REMOTE_PREFIX, REOPEN_KEY, WSL_DEFAULT_REGEX } from './constants';
 import { execSync } from 'child_process';
@@ -209,8 +209,8 @@ export function activate(context: vscode.ExtensionContext) {
                         await showDashboard();
                         break;
                     case 'reordered-projects':
-                        let groupOrders = e.groupOrders as GroupOrder[];
-                        await reorderGroups(groupOrders);
+                        let groupHierarchy = e.groupHierarchy as GroupHierarchy[];
+                        await reorderGroups(groupHierarchy);
                         break;
                     case 'remove-project':
                         projectId = e.projectId as string;
@@ -234,6 +234,10 @@ export function activate(context: vscode.ExtensionContext) {
                         break;
                     case 'add-group':
                         await addGroup();
+                        break;
+                    case 'add-subgroup':
+                        groupId = e.groupId as string;
+                        await addSubgroup(groupId);
                         break;
                     case 'collapse-group':
                         groupId = e.groupId as string;
@@ -264,6 +268,24 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         await projectService.addGroup(groupName);
+        showDashboard();
+    }
+
+    async function addSubgroup(parentGroupId: string) {
+        var groupName;
+
+        try {
+            groupName = await queryGroupFields();
+        } catch (error) {
+            if (error.message !== USER_CANCELED) {
+                vscode.window.showErrorMessage(`An error occured while adding the subgroup.`);
+                throw error; // Rethrow error to make vscode log it
+            }
+
+            return;
+        }
+
+        await projectService.addGroup(groupName, null, parentGroupId);
         showDashboard();
     }
 
@@ -1036,37 +1058,88 @@ export function activate(context: vscode.ExtensionContext) {
         showDashboard();
     }
 
-    async function reorderGroups(groupOrders: GroupOrder[]) {
-        var groups = projectService.getGroups();
-
-        if (groupOrders == null) {
-            vscode.window.showInformationMessage('Invalid Argument passed to Reordering Projects.');
+    async function reorderGroups(groupHierarchy: GroupHierarchy[]) {
+        if (groupHierarchy == null || !Array.isArray(groupHierarchy)) {
+            vscode.window.showErrorMessage('Invalid Argument passed to Reordering Projects.');
             return;
         }
 
-
-        // Map projects by id for easier access
+        // Create a map of all projects for quick access
         var projectMap = new Map<string, Project>();
-        for (let group of groups) {
+        const flatGroups = projectService.getAllGroupsFlat();
+        for (let group of flatGroups) {
             if (group.projects == null) {
                 continue;
             }
-
             for (let project of group.projects) {
                 projectMap.set(project.id, project);
             }
         }
 
-        // Build new, reordered projects group array
-        var reorderedGroups: Group[] = [];
-        for (let { groupId, projectIds } of groupOrders) {
-            let group = groups.find(g => g.id === groupId);
-            if (group == null) {
-                group = new Group("Group #" + (reorderedGroups.length + 1));
+        // Recursive function to build groups from hierarchy
+        function buildGroupFromHierarchy(hierarchyItem: GroupHierarchy, parentId?: string): Group {
+            // Handle temporary groups
+            if (hierarchyItem.groupId && hierarchyItem.groupId.startsWith('temp-')) {
+                // Create new group for temporary group
+                let group = new Group("New Group", [], parentId);
+                group.id = Group.getRandomId();
+
+                // Assign projects to group
+                group.projects = hierarchyItem.projectIds
+                    .map(pid => projectMap.get(pid))
+                    .filter(p => p != null);
+
+                // Recursively process child groups
+                group.children = hierarchyItem.children.map(childHierarchy =>
+                    buildGroupFromHierarchy(childHierarchy, group.id)
+                );
+
+                return group;
             }
 
-            group.projects = projectIds.map(pid => projectMap.get(pid)).filter(p => p != null);
-            reorderedGroups.push(group);
+            // Find existing group or create new one
+            let group = flatGroups.find(g => g.id === hierarchyItem.groupId);
+            if (group == null && hierarchyItem.groupId) {
+                // Create new group only if there's a valid ID
+                group = new Group("Group #" + Date.now(), [], parentId);
+                group.id = hierarchyItem.groupId;
+            } else if (group == null) {
+                // If no valid ID, create new group with random ID
+                group = new Group("New Group", [], parentId);
+                group.id = Group.getRandomId();
+            } else {
+                // Preserve existing group properties
+                group = Object.assign(new Group(group.groupName, [], parentId), group);
+            }
+
+            // Set parent if specified
+            if (parentId) {
+                group.parentId = parentId;
+            } else {
+                // Clear parentId for top level groups
+                group.parentId = undefined;
+            }
+
+            // Assign projects to group with additional verification
+            group.projects = hierarchyItem.projectIds
+                .map(pid => projectMap.get(pid))
+                .filter(p => p != null);
+
+            // Recursively process child groups
+            group.children = hierarchyItem.children.map(childHierarchy =>
+                buildGroupFromHierarchy(childHierarchy, group.id)
+            );
+
+            return group;
+        }
+
+        // Build new group structure
+        var reorderedGroups: Group[] = [];
+        for (let hierarchyItem of groupHierarchy) {
+            if (hierarchyItem.groupId || hierarchyItem.projectIds.length > 0 || hierarchyItem.children.length > 0) {
+                const newGroup = buildGroupFromHierarchy(hierarchyItem);
+                reorderedGroups.push(newGroup);
+            }
         }
 
         await projectService.saveGroups(reorderedGroups);
@@ -1084,7 +1157,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     function getGroupsTempFilePath(): string {
-        var savePath = context.globalStoragePath;
+        var savePath = context.globalStorageUri.fsPath;
         return `${savePath}/Dashboard Projects.json`;
     }
 
